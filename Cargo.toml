@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/kawach-core",
+    "crates/kawach-rotation",
 ]
 
 [workspace.package]
