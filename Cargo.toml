@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kawach-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/amibhai/KAWACH"
+authors = ["KAWACH contributors"]
+
+# Dependency budget: see DESIGN.md §13. Every crate here runs with our privileges and
+# can observe plaintext secret material. Additions to `kawach-core` require a written
+# justification in that table.
+[workspace.dependencies]
+zeroize = { version = "1", features = ["zeroize_derive"] }
+subtle = "2"
+sha2 = "0.10"
+hmac = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+async-trait = "0.1"
+rand = "0.8"
+time = { version = "0.3", features = ["serde-well-known", "formatting", "parsing", "macros"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+todo = "warn"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+[profile.release]
+# A panic that unwinds through secret-holding frames still runs Drop (and therefore
+# zeroization). `panic = "abort"` would skip it. Keep unwinding. See DESIGN.md I2.
+panic = "unwind"
+debug = false

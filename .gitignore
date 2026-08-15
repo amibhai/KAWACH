@@ -1,0 +1,31 @@
+# Build artefacts
+/target/
+**/*.rs.bk
+
+# Local KAWACH state. None of this should ever be committed: the journal and audit
+# log describe real infrastructure, and the fingerprint key is what keeps a stolen
+# findings database from being dictionary-attacked (DESIGN.md I3).
+/.kawach/
+*.kawach-state/
+fingerprint.key
+audit.jsonl
+*.journal.jsonl
+
+# Credential-shaped files, belt and braces. A secrets tool whose own repository leaks
+# a secret has refuted its own premise.
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.tfvars
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
