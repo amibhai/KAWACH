@@ -15,8 +15,8 @@ between releases is worse than one that never existed.
 
 ## [Unreleased]
 
-Phases 1–3 complete (design, security core, rotation protocol). No CLI, backends, or
-providers yet; see the [phase table](README.md#phases).
+Phases 1–4 complete (design, security core, rotation protocol, tamper-evident audit
+log). No CLI, backends, or providers yet; see the [phase table](README.md#phases).
 
 ### Added
 
@@ -71,6 +71,35 @@ providers yet; see the [phase table](README.md#phases).
   asserting safety properties S1–S5, plus a meta-test that points the checker at a
   deliberately unsafe machine and asserts it fails.
 
+#### Phase 4 — Tamper-evident audit log (`kawach-audit`)
+- `AuditLog`: append-only, hash-chained, `fsync`-per-entry log stored as JSONL. Implements
+  `kawach_core::AuditAnchor`, which is what turns the phase-2 capability tokens from a
+  well-typed intention into an enforced one — no `CommitToken` is minted and no
+  `ReadWitness` issued without a durable chained record preceding it.
+- Chain construction with genesis bound to the instance id, so a log harvested from a
+  different (deliberately quiet) installation does not verify as this one's history.
+- `CanonicalPayload`: a **structural** canonical encoding. Events contribute an ordered
+  `(name, value)` field list that is length-prefixed and hashed directly, so the hash
+  never depends on JSON serialisation. Reformatting the log or changing serialiser
+  version cannot break verification; changing any semantic field still does.
+- `CheckpointSigner` / `CheckpointVerifier`: Ed25519 signatures over
+  `(instance, entry_count, head)`, domain-separated and length-prefixed.
+- `Anchor` trait plus `FileAnchor`, for publishing the chain head to an external
+  append-only store. `latest()` returns the highest entry count rather than the last
+  line, so an append-only adversary cannot roll the anchor backwards to hide a
+  truncation.
+- `verify_file` / `verify_records` / `verify_signatures` / `verify_against_anchor`,
+  reporting the **first** divergent sequence number rather than a boolean — during an
+  incident, where tampering began is what bounds which records remain believable.
+- Verification on open: a log that does not verify is refused rather than appended to,
+  so a divergence cannot be buried under new valid-looking entries.
+- `tests/tamper_detection.rs` performs each of the six attacks in DESIGN.md §7.3 against
+  a real log file, and asserts the two **negative** results — a bare chain detects
+  neither tail truncation nor a wholesale rewrite — before showing that anchors and
+  signatures do.
+- `tests/capability_enforcement.rs` re-runs the phase-2 capability guarantees against a
+  real chain instead of a test double.
+
 #### Repository
 - `.gitignore` covering build artefacts, local KAWACH state (journals, audit log,
   fingerprint key), and credential-shaped files.
@@ -88,9 +117,19 @@ providers yet; see the [phase table](README.md#phases).
   refuted its premise. Test fidelity is unchanged, since `SafeDetail` scrubs on length
   and entropy, never on vendor prefix.
 - `panic = "unwind"` pinned for release builds. `panic = "abort"` would skip `Drop` and
-  therefore skip zeroization of any secret live at the point of a panic.
+  therefore skip zeroization of any secret live at the point of a panic — and, since
+  phase 4, would also skip the audit record that a dropped `ReadWitness` emits.
+- `CoreAuditEvent` is deliberately **not** `#[non_exhaustive]`, unlike the other public
+  enums in `kawach-core`. It is an internal seam between two KAWACH crates, and
+  exhaustiveness is the forcing function: adding a variant must break `kawach-audit`'s
+  build so a new event cannot be silently dropped from the log by a wildcard arm.
 
 ### Fixed
+- `DESIGN.md` §7.2 specified `lp(event_payload)` with key order pinned by `BTreeMap`,
+  which contradicted the same section's own (correct) argument that hashing serialised
+  JSON is fragile — it addressed key ordering while leaving whitespace, escaping, and
+  number formatting in the trusted path. The encoding is now structural, and the section
+  documents the change.
 - `entropy_separates_random_from_prose` was statistically flaky. Shannon entropy over 40
   draws from a 66-symbol alphabet is an estimator biased downward by collisions (~30
   distinct symbols expected), so the measurement sat near log2(30) and intermittently
@@ -100,10 +139,15 @@ providers yet; see the [phase table](README.md#phases).
 ### Known limitations
 See [DESIGN.md §12](DESIGN.md#12-limitations-residual-risk-and-what-could-go-wrong). The
 load-bearing ones at this stage:
-- The audit log is **not implemented** — only the `AuditAnchor` seam exists. The
-  capability tokens enforce ordering against that trait, not against a real hash chain.
-- Without checkpoint signing and external anchoring, the designed chain would detect
-  edits, reordering, and insertion, but **not tail truncation**.
+- Only `FileAnchor` ships. A local file gives **no** protection against a local
+  adversary (A3): anyone who can rewrite the log can rewrite a file beside it. The
+  anchors that carry weight — a Vault path granted `create` without `update`, or S3
+  Object Lock — arrive with those backends in phases 5 and 6.
+- Checkpoint signing is implemented but key custody is not: the signing key must live
+  outside the log's trust domain to be worth anything, and there is no backend to hold
+  it in yet.
+- The audit log is not shipped to a remote sink in real time, so an adversary with local
+  root can still delete it outright. Tamper-*evident*, not tamper-proof.
 - No process hardening yet: `RLIMIT_CORE`, `PR_SET_DUMPABLE`, and `mlockall` are
   designed but not applied, so I2's residual risk is larger today than the design
   intends.
@@ -117,8 +161,6 @@ load-bearing ones at this stage:
 Entries move from here into a release section as they land. Full scope per phase is in
 the [README phase table](README.md#phases).
 
-- **Phase 4** — Tamper-evident audit log: hash chain over canonical binary encoding,
-  Ed25519 checkpoint signing, external anchoring, `kawach audit verify`.
 - **Phase 5** — Rotation engine, Vault KV v2 backend, PostgreSQL A/B-role provider, and
   the zero-dropped-connections demo.
 - **Phase 6** — AWS Secrets Manager backend and generic API-key provider.

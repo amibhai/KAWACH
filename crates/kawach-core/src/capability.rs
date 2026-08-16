@@ -27,9 +27,15 @@ use crate::scope::ScopedRef;
 /// Deliberately small. The richer event vocabulary lives in `kawach-audit`; this enum
 /// exists so that `kawach-core` can require an audit record without depending on the
 /// audit crate (which depends on this one).
+///
+/// Deliberately **not** `#[non_exhaustive]`, unlike the other public enums in this
+/// crate. This is an internal seam between two KAWACH crates, not an extension point,
+/// and exhaustiveness is the forcing function we want: adding a variant here must break
+/// `kawach-audit`'s build, so a new event cannot be silently dropped from the audit log
+/// by a wildcard arm. An event that is emitted but never recorded is the exact failure
+/// invariant I5 exists to prevent.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum CoreAuditEvent {
     /// An `--apply` run acquired the authority to mutate.
     CommitTokenMinted {

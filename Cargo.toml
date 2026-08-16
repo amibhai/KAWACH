@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/kawach-audit",
     "crates/kawach-core",
     "crates/kawach-rotation",
 ]

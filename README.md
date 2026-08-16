@@ -8,10 +8,11 @@ for infrastructure teams.
 
 > ### ⚠️ Status: pre-alpha — not usable yet
 >
-> **Phases 1–3 of 9 are complete.** What exists today is the security core and the
-> rotation protocol: the types, the capability model, the state machine, and its proofs.
-> There is **no CLI, no backend integration, and no working rotation yet** — those are
-> phases 4–6. Nothing here should be pointed at production infrastructure.
+> **Phases 1–4 of 9 are complete.** What exists today is the security core, the
+> rotation protocol, and the tamper-evident audit log: the types, the capability model,
+> the state machine, its proofs, and the hash chain that backs them. There is **no CLI,
+> no backend integration, and no working rotation yet** — those are phases 5–6. Nothing
+> here should be pointed at production infrastructure.
 >
 > This README distinguishes throughout between what is **enforced in code** (●) and what
 > is **designed but not built** (○). If you are evaluating KAWACH, the honest summary is
@@ -71,12 +72,12 @@ never evidence of a clean estate.
 | **1** | **Design & threat model** | [DESIGN.md](DESIGN.md) — adversaries A1–A6, assets, trust boundaries, 8 security invariants each with its enforcement mechanism and *residual risk*, the rotation state machine, the audit-log construction, least-privilege policies, and a long limitations section. |
 | **2** | **Security core** | [`kawach-core`](crates/kawach-core) — `SecretString`, keyed fingerprints, the three capability tokens, the scope model, scrubbing error types, and the `SecretBackend` / `RotationProvider` / `DiscoverySource` traits. |
 | **3** | **Rotation protocol** | [`kawach-rotation`](crates/kawach-rotation) — the 16-state machine with compensation and reconciliation, the write-ahead journal with crash recovery, and an exhaustive model check of safety properties S1–S5. |
+| **4** | **Tamper-evident audit log** | [`kawach-audit`](crates/kawach-audit) — hash chain over a structural canonical encoding, Ed25519 signed checkpoints, the external-anchor seam, and verification reporting the first divergent sequence number. Each of the six attacks in DESIGN.md §7.3 is performed adversarially in tests, including the two a chain alone cannot catch. |
 
 ### ⬜ Planned
 
 | # | Phase | Scope |
 |:-:|---|---|
-| **4** | **Tamper-evident audit log** | Hash chain over a canonical binary encoding, Ed25519 checkpoint signing, external anchoring to defeat tail truncation, and `kawach audit verify` reporting the first divergent sequence number. |
 | **5** | **Rotation engine + Vault + PostgreSQL** ⭐ | The driver that runs the state machine against real systems, the Vault KV v2 backend, and the PostgreSQL A/B-role provider. **Ends with the zero-dropped-connections demo** — a load generator running through a live rotation with a drain observed via `pg_stat_activity`. |
 | **6** | **Second backend & provider** | AWS Secrets Manager (staging labels map onto `stage`/`promote` natively) and a generic API-key provider, proving the plugin seams hold. |
 | **7** | **Discovery & risk scoring** | Filesystem/git, `.env` and structured config, CI/CD variables, container env, backend enumeration; the detector chain; the explainable log-odds risk model with per-factor rationale. |
@@ -107,7 +108,7 @@ never evidence of a clean estate.
           │      ┌──────┴─────────────┴─────────────┘
           ▼      ▼
   ┌─────────────────┐      ┌──────────────────┐
-  │ kawach-providers│─────▶│ kawach-audit   ○ │  hash chain, witnesses
+  │ kawach-providers│─────▶│ kawach-audit   ● │  hash chain, witnesses
   │ postgres a/b  ○ │      └────────┬─────────┘
   │ generic api   ○ │               │
   └────────┬────────┘               │
@@ -234,7 +235,8 @@ risk per invariant in [DESIGN.md §4](DESIGN.md#4-security-invariants-and-how-ea
 | **I7** Dry-run default | `CommitToken` has a private constructor reachable only from `ExecutionMode::Apply`. A dry run *cannot* mutate; a plugin gains nothing by ignoring a flag it does not receive. |
 | **I8** Availability | Machine-checked: **S2** asserts that at every reachable state, at least one credential is both live and published. |
 | Scope | Backend methods take `ScopedRef`, obtainable only from `Scope::authorize`. Out-of-scope access is unrepresentable, not merely checked. |
-| Audited reads | `read()` requires a `ReadWitness`, issued only after a durable audit record. Dropping one without completing it records the abandonment — even a panic mid-read leaves evidence. |
+| **I5** Tamper-evident audit | Hash-chained append-only log. Editing, inserting, deleting, reordering, or substituting another instance's log is detected, and verification names the **first** divergent sequence number. Signed checkpoints catch a wholesale rewrite; external anchors catch tail truncation — neither of which a chain alone can see. |
+| Audited reads | `read()` requires a `ReadWitness`, issued only after a durable, chained audit record. Dropping one without completing it records the abandonment — even a panic mid-read leaves evidence. |
 
 ### The model checker
 

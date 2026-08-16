@@ -422,9 +422,14 @@ compromise a *second* system with *different* credentials.
 **Tests:** the witness lifecycle is unit-tested end to end — that no witness is issued
 when the audit write fails (so an unwritable log denies the read), that `Drop` emits an
 abandonment record, and that it still does so when the read **panics** mid-flight.
-"Cannot read without a witness" needs no test: it is the function signature. Chain
-verification against corrupted, reordered, truncated and re-signed logs arrives with
-the `kawach-audit` implementation.
+"Cannot read without a witness" needs no test: it is the function signature.
+
+Chain verification is tested adversarially in
+`crates/kawach-audit/tests/tamper_detection.rs`, which performs each of the six attacks
+in §7.3 against a real log file — including asserting the two **negative** results, that
+a bare chain does *not* detect tail truncation or a wholesale rewrite, before showing
+that anchors and signatures do. `capability_enforcement.rs` closes the loop by running
+the tokens above against a real chain rather than a test double.
 
 **Residual risk:** A3 with local root can delete the entire log file. Tamper-*evident*
 is not tamper-*proof*; the guarantee is "you will know", conditional on the anchor
@@ -921,23 +926,40 @@ text.
 ### 7.2 Canonical encoding
 
 Hashing serialised JSON text is a well-known footgun: key ordering, whitespace, Unicode
-escaping, and float formatting all vary between serialisers and versions, so a log
+escaping, and number formatting all vary between serialisers and versions, so a log
 written by one build can fail to verify under another. KAWACH hashes a **canonical,
-length-prefixed binary encoding**:
+length-prefixed binary encoding** derived from the *parsed* event:
 
 ```
-canonical(entry) := DOMAIN            ‖ u64_le(seq)
-                  ‖ lp(prev_hash)     ‖ lp(timestamp_rfc3339)
-                  ‖ lp(actor)         ‖ lp(event_kind)
-                  ‖ lp(event_payload)
+canonical(entry) := u64_le(seq)
+                  ‖ lp(prev_hash) ‖ lp(timestamp_rfc3339)
+                  ‖ lp(actor)     ‖ lp(run)
+                  ‖ lp(event_kind)
+                  ‖ u32_le(field_count)
+                  ‖ for each field: lp(name) ‖ lp(value)
 
 where lp(x) := u32_le(len(x)) ‖ x
 ```
 
+**The payload is structural, not serialised.** An earlier draft of this section
+specified `lp(event_payload)` with key order pinned by `BTreeMap` — which quietly put
+JSON back in the hash path and addressed only one of the four failure modes listed
+above. Instead, each event contributes an ordered list of `(name, value)` pairs via the
+`CanonicalPayload` trait, and those pairs are encoded directly. The consequence is the
+property we actually want: **reformatting the JSON, or changing serialiser version,
+cannot break verification, while altering any semantic field still breaks the chain.**
+
 Length prefixing (rather than delimiters) prevents field-boundary ambiguity: without
-it, `actor="a" kind="bc"` and `actor="ab" kind="c"` hash identically, and an adversary
-who controls one field can forge another. Event payloads use `BTreeMap` for
-deterministic key order, and untagged enums are forbidden in audit types.
+it, `actor="a" kind="bc"` and `actor="ab" kind="c"` encode to identical bytes, and an
+adversary who controls one field could forge another while preserving the digest. The
+field *count* is committed to for the same reason at the list level — otherwise a field
+could be appended or dropped without changing the concatenation. Both properties are
+tested directly in `crates/kawach-audit/src/hash.rs`.
+
+The timestamp is stored in the record as the **exact string that was hashed**, not as a
+parsed value that verification re-formats. Otherwise chain integrity would depend on a
+formatter round-tripping byte-for-byte across library versions, which is a fragile thing
+to hang tamper detection on.
 
 ### 7.3 What the chain does and does not stop
 
@@ -1269,8 +1291,8 @@ everything marked ○ as intent, not as a property you can rely on.
 | Rotation state machine, compensation, reconciliation | ● | `kawach-rotation::state` |
 | Machine-checked safety properties S1–S5 | ● | `kawach-rotation/tests/model_check.rs` |
 | Write-ahead journal, crash recovery, torn-write handling | ● | `kawach-rotation::journal` |
-| **Audit log implementation** (hash chain, canonical encoding, `verify`) | ○ | Only the `AuditAnchor` seam exists. §7 is design. |
-| Ed25519 checkpoint signing and external anchoring | ○ | Until built, the chain would detect edits/reordering/insertion but **not truncation** |
+| **Audit log implementation** (hash chain, canonical encoding, `verify`) | ● | `kawach-audit`; six attacks from §7.3 tested adversarially |
+| Ed25519 checkpoint signing and external anchoring | ● | `CheckpointSigner`, `Anchor`. Only `FileAnchor` ships — it gives **no** protection against a local adversary; the Vault/S3 anchors with real ACL separation land with those backends |
 | Vault, AWS, file/env backends | ○ | |
 | PostgreSQL A/B and generic API-key providers | ○ | §6.6 is design |
 | The rotation **engine** that drives the state machine against real systems | ○ | The protocol exists; the driver does not |
