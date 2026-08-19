@@ -1,0 +1,30 @@
+[package]
+name = "kawach-engine"
+description = "KAWACH rotation engine: drives the rotation state machine against real backends and providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# Fault-injecting mock backend and provider. Also serves as the conformance kit that
+# out-of-tree providers can test themselves against.
+test-support = ["kawach-core/test-support"]
+
+[dependencies]
+kawach-core = { path = "../kawach-core" }
+kawach-audit = { path = "../kawach-audit" }
+kawach-rotation = { path = "../kawach-rotation" }
+async-trait.workspace = true
+serde.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+kawach-engine = { path = ".", features = ["test-support"] }
+tokio = { workspace = true }
+tempfile = "3"
+
+[lints]
+workspace = true

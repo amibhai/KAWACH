@@ -68,6 +68,17 @@ pub enum Record {
         /// The new credential's handle.
         handle: CredentialHandle,
     },
+    /// What was published *before* this run wrote anything.
+    ///
+    /// Recorded **before** the stage attempt, not after. The compensation path needs to
+    /// know what to restore, and a baseline captured only in memory is lost in exactly
+    /// the crash that makes it necessary — after which recovery cannot tell whether the
+    /// version the backend currently reports is the old value or the new one, and must
+    /// escalate rather than guess.
+    PublicationBaseline {
+        /// The version current at the start of the run, if any.
+        previous: Option<VersionId>,
+    },
     /// The backend named the version it wrote. Needed by the compensation path to know
     /// what to restore.
     VersionAssigned {
@@ -310,6 +321,7 @@ pub fn replay(path: &Path) -> Result<RecoveredRun> {
                 state = to;
             }
             Record::HandleAssigned { handle: h } => handle = Some(h),
+            Record::PublicationBaseline { previous } => previous_version = previous,
             Record::VersionAssigned { previous, written } => {
                 previous_version = previous;
                 written_version = Some(written);
