@@ -5,6 +5,7 @@ members = [
     "crates/kawach-core",
     "crates/kawach-engine",
     "crates/kawach-rotation",
+    "crates/kawach-vault",
 ]
 
 [workspace.package]
@@ -29,6 +30,7 @@ thiserror = "1"
 async-trait = "0.1"
 rand = "0.8"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 time = { version = "0.3", features = ["serde-well-known", "formatting", "parsing", "macros"] }
 
 [workspace.lints.rust]

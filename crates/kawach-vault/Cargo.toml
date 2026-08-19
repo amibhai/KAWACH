@@ -1,0 +1,27 @@
+[package]
+name = "kawach-vault"
+description = "KAWACH HashiCorp Vault KV v2 secret backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kawach-core = { path = "../kawach-core" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+zeroize.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true }
+kawach-core = { path = "../kawach-core", features = ["test-support"] }
+kawach-audit = { path = "../kawach-audit" }
+
+[lints]
+workspace = true

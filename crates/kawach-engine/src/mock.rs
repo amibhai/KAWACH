@@ -270,6 +270,7 @@ impl SecretBackend for MockBackend {
         _reference: &ScopedRef,
         version: &VersionId,
         _commit: &CommitToken,
+        _witness: &kawach_core::ReadWitness<'_>,
     ) -> Result<()> {
         if self.faults.fail_restore {
             return Err(self.fail("restore"));

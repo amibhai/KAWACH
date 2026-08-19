@@ -518,7 +518,24 @@ impl<'a> RotationEngine<'a> {
                     // back; compensation continues to revoking the new credential.
                     return Ok(RotationEvent::RestoreOk);
                 };
-                match self.backend.restore(&target.reference, &previous, commit).await {
+                // Restoring may require reading the prior value (Vault KV v2 has no
+                // native version promotion), so it is performed under an audited
+                // witness like any other plaintext access.
+                let witness = kawach_core::ReadWitness::issue(
+                    self.audit,
+                    kawach_core::ReadIntent::new(
+                        &target.run,
+                        &target.reference,
+                        "restore the previous value during rotation compensation",
+                    ),
+                )?;
+                let restored = self.backend.restore(&target.reference, &previous, commit, &witness).await;
+                witness.complete(if restored.is_ok() {
+                    kawach_core::ReadOutcome::Success
+                } else {
+                    kawach_core::ReadOutcome::Failed
+                })?;
+                match restored {
                     Ok(()) => RotationEvent::RestoreOk,
                     Err(e) => {
                         self.note_failure("restore", &e, ctx)?;

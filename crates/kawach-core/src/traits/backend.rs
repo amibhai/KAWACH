@@ -91,8 +91,22 @@ pub trait SecretBackend: Send + Sync {
     /// Republish a prior version, for the compensation path (DESIGN.md §6.4).
     ///
     /// Implemented as a *forward write* of the earlier value rather than a destructive
-    /// version rollback, so that the backend's own history remains a complete record of
-    /// what happened — including the fact that a rotation was rolled back.
+    /// version rollback, so the backend's own history remains a complete record of what
+    /// happened — including the fact that a rotation was rolled back.
+    ///
+    /// ## Why this takes a [`ReadWitness`]
+    ///
+    /// Most versioned stores have no native "make version N current" operation. Vault
+    /// KV v2 does not: restoring a prior value means **reading** it and writing it
+    /// forward. That is a plaintext access, and invariant I5 admits no exceptions for
+    /// plaintext accesses performed on KAWACH's own behalf — a read during rollback is
+    /// exactly as worth recording as a read during verification, and arguably more so,
+    /// since rollbacks are when things have already gone wrong.
+    ///
+    /// Backends that *do* have native promotion (AWS Secrets Manager, via staging
+    /// labels) need no read and may ignore the witness. They still receive one, because
+    /// the caller cannot know which kind of backend it holds, and an unused audit record
+    /// is cheaper than a missing one.
     ///
     /// # Errors
     /// Backend or transport failures; [`crate::error::KawachError::Backend`] if the
@@ -102,6 +116,7 @@ pub trait SecretBackend: Send + Sync {
         reference: &ScopedRef,
         version: &VersionId,
         commit: &CommitToken,
+        witness: &ReadWitness<'_>,
     ) -> Result<()>;
 
     /// Observe what is currently published, for reconciliation after a crash or a lost
